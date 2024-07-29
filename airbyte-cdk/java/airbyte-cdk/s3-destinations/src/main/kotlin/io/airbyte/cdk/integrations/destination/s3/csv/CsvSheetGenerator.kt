@@ -38,7 +38,6 @@ interface CsvSheetGenerator {
             useV2FieldNames: Boolean = false
         ): CsvSheetGenerator {
             return if (formatConfig.flattening == Flattening.NO) {
-                println("NO FLAT")
                 NoFlatteningSheetGenerator(useV2FieldNames)
             } else if (formatConfig.flattening == Flattening.ROOT_LEVEL) {
                 RootLevelFlatteningSheetGenerator(jsonSchema!!, useV2FieldNames)

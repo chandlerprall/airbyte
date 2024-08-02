@@ -17,6 +17,7 @@ from orchestrator.ops.slack import send_slack_message
 from orchestrator.utils.dagster_helpers import OutputDataFrame, output_dataframe
 
 GROUP_NAME = "github"
+TOOLING_TEAM_SLACK_TEAM_ID = "S077R8636CV"
 
 
 def _get_md5_of_github_file(context: OpExecutionContext, github_connector_repo: Repository, path: str) -> str:
@@ -102,7 +103,6 @@ def stale_gcs_latest_metadata_file(context, github_metadata_file_md5s: dict) -> 
     human_readable_stale_bools = {True: "🚨 YES!!!", False: "No"}
     latest_gcs_metadata_file_blobs = context.resources.latest_metadata_file_blobs
     latest_gcs_metadata_md5s = {blob.md5_hash: blob.name for blob in latest_gcs_metadata_file_blobs}
-
     stale_report = [
         {
             "stale": _is_stale(github_file_info, latest_gcs_metadata_md5s),
@@ -116,7 +116,6 @@ def stale_gcs_latest_metadata_file(context, github_metadata_file_md5s: dict) -> 
     ]
 
     stale_metadata_files_df = pd.DataFrame(stale_report)
-
     # sort by stale true to false, then by github_path
     stale_metadata_files_df = stale_metadata_files_df.sort_values(
         by=["stale", "github_path"],
@@ -126,12 +125,20 @@ def stale_gcs_latest_metadata_file(context, github_metadata_file_md5s: dict) -> 
     # If any stale files exist, report to slack
     channel = os.getenv("STALE_REPORT_CHANNEL")
     any_stale = stale_metadata_files_df["stale"].any()
-    if channel and any_stale:
-        only_stale_df = stale_metadata_files_df[stale_metadata_files_df["stale"] == True]
-        pretty_stale_df = only_stale_df.replace(human_readable_stale_bools)
-        stale_report_md = pretty_stale_df.to_markdown(index=False)
-        send_slack_message(context, channel, stale_report_md, enable_code_block_wrapping=True)
-
+    if channel:
+        if any_stale:
+            only_stale_df = stale_metadata_files_df[stale_metadata_files_df["stale"] == True]
+            pretty_stale_df = only_stale_df.replace(human_readable_stale_bools)
+            stale_report_md = pretty_stale_df.to_markdown(index=False)
+            send_slack_message(context, channel, f"🚨 Stale metadata detected! (cc. <!subteam^{TOOLING_TEAM_SLACK_TEAM_ID}>)")
+            send_slack_message(context, channel, stale_report_md, enable_code_block_wrapping=True)
+        else:
+            message = f"""
+            Analyzed {len(github_metadata_file_md5s)} metadata files on our master branch and {len(latest_gcs_metadata_md5s)} latest metadata files hosted in GCS.All MD5 hashes of these files.
+            All MD5 hashes of our metadata files on master match the latest metadata files on GCS.
+            No stale metadata: GCS metadata are up to date with metadata hosted on GCS.
+            """
+            send_slack_message(context, channel, message)
     stale_metadata_files_df.replace(human_readable_stale_bools, inplace=True)
     return output_dataframe(stale_metadata_files_df)
 
